@@ -111,7 +111,13 @@ function Game(s1, s2) {
 			}, firewallCreation(args[1]));
 		}
 	}); 
-
+s'da;'
+d;a's;das'd;as
+d;as'
+d;a'
+s;d
+a';d'
+as
 
 
 }
