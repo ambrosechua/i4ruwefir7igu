@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>tel</title>
+	<style>
+	input[type=text] {
+		appearance: none;
+		backgroud-image: none;
+		border: none;
+		font-family: inherit;
+		font-size: inherit;
+		margin: 0;
+		padding: 0;
+		outline: none;
+	}
+	</style>
+</head>
+<body>
+<pre><code id="a"></code><input type="text" id="b" autocomplete="off" size="50" /></pre>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+	var ele = document.getElementById("a");
+	var socket = io.connect(window.location.href, {
+		reconnect: false
+	});
+	socket.on('data', function (data) {
+		ele.innerText += data;
+		window.scrollTo(0, document.body.scrollHeight);
+	});
+	socket.on("disconnect", function () {
+		ele.innerText += "\n\nReload the page. ";
+		ele = null;
+		socket.disconnect();
+	});
+	var b = document.getElementById("b")
+	b.addEventListener("keydown", function (e) {
+		console.log(e.which);
+		if (e.which <= 90 && e.which >= 65) {
+			
+		}
+		else if (e.which <= 57 && e.which >= 48) {
+
+		}
+		else if (e.which == 13) {
+			socket.emit('data', b.value + "\n");
+			ele.innerText += b.value + "\n";
+			b.value = "";
+		}
+		else if (e.which == 32) {
+
+		}
+		else if (e.which == 8) {
+			
+		}
+		else {
+			e.preventDefault();
+			return;
+		}
+	});
+	b.focus();
+	window.addEventListener("click", function () {
+		b.focus();
+	});
+</script>
+</body>
+</html>

@@ -9,23 +9,43 @@ function genId(bytes) {
         return crypto.randomBytes(bytes).toString("hex");
 }
 
+function log(t) {
+	true && console.log(t);
+}
+
+String.prototype.repeat = function (c) {
+	var s = "";
+	for (var i = 0; i < c; i++) {
+		s += this;
+	}
+	return s;
+}; 
+
+function formatString(s, w, alignright) {
+	var c = w - s.length;
+	return alignright ? " ".repeat(c) + s : s + " ".repeat(c);
+}
+
 var users = [];
 var userEventEmitter = new EventEmitter();
 
 server.on("connection", function (socket) {
+	var oldwrite = socket.write;
+	socket.write = function () {
+		oldwrite.call(socket, arguments[0].replace("\n", "\r\n"));
+	};
 	var id = users.push(socket) - 1;
-	socket.write("Assigning game... \n\
-While you wait, here's the documentation: \n\
-\n\
-> firewall create <int level> \n\
-> firewall up <String id> \n\
-> firewall down <String id> \n\
-\n\
-> bot create <int level> \n\
-> bot up <String id> \n\
-> bot down <String id> \n\
-\n\
-> exit\n\
+	socket.write("Assigning game... \r\n\
+While you wait, here's all the commands: \r\n\
+> firewall list [String id] \r\n\
+> firewall create <int level> \r\n\
+> firewall up <String id> \r\n\
+> firewall delete <String id> \r\n\
+> bot list \r\n\
+> bot create <int level> \r\n\
+> bot up <String id> \r\n\
+> bot delete <String id> \r\n\
+> exit\r\n\
 ");
 	userEventEmitter.emit("newuser", id);
 });
@@ -50,41 +70,109 @@ function Game(s1, s2) {
 			buf += d;
 			if (buf.indexOf("\n") > -1) {
 				buf.split("\n").forEach(function (t) {
-					t && cb(t);
+					t && cb(t.replace("\r", ""));
+					buf = "";
 				});
 			}
 		});
-		return {
-			write: function (txt) {
-				soc.write(txt);
-			},
-			end: function () {
-				soc.end();
-			},
-			firewalls: [],
-			bots: [],
-			prompt: function () {
-				soc.write("> ");
-			},
-			acceptinput: false
+		soc.on("end", function () {
+			cb({ dc: true });
+		});
+		this.write = function (txt) {
+			soc.write(txt);
 		};
+		this.end = function () {
+			soc.end();
+		};
+		this.dead = function () {
+			cb({ lose: true });
+		};
+		this.firewalls = [];
+		this.damage = 0;
+		this.bots = [];
+		this.prompt = function () {
+			soc.write("> ");
+		};
+		this.acceptinput = false;
+		this.attack = function () {
+			this.damage -= attacks.attackHealth();
+			log("damage: " + this.damage);
+			var a = null;
+			this.firewalls.forEach(function (e) {
+				a && e.up ? 0 : a = e;
+			}); 
+			if (this.damage <= -attacks.firewallHealth(a.level)) {
+				log("wall down: " + a.hash);
+				this.write("Your firewall " + a.hash + " went down. ");
+				this.firewalls.splice(0, 1);
+				this.damage = 0;
+				if (this.firewalls.length == 0) {
+					this.dead();
+				}
+				return true;
+			}
+			return false;
+			
+		}
+		return this;
 	}
+	
+
+	var GameEvents = new EventEmitter();
 
 	var p1 = new Player(s1, function (command) {
+		if (typeof command == "object" && command.lose ) {
+			GameEvents.emit("dead", p1, p2);
+			return;
+		}
+		if (typeof command == "object" && command.dc ) {
+			GameEvents.emit("exit", "", p1, p2);
+			return;
+		}	
 		if (p1.acceptinput) {
 			var commands = parseCommand(command);		
 			GameEvents.emit("command", commands, p1, p2);
 		}
 	});
 	var p2 = new Player(s2, function (command) {
+		if (typeof command == "object" && command.lose ) {
+			GameEvents.emit("dead", p2, p1);
+			return;
+		}
+		if (typeof command == "object" && command.dc ) {
+			GameEvents.emit("exit", "", p1, p2);
+			return;
+		}	
 		if (p2.acceptinput) {
 			var commands = parseCommand(command);		
 			GameEvents.emit("command", commands, p2, p1);
 		}
 	});
 	var isispup = false;
+
+	var countdown = "\r\nConnected to opponent! Will start in 3...";	
+	p1.write(countdown);
+	p2.write(countdown);
+
+	setTimeout(function () {
 	
-	var welcome = "\nConnected to opponent! ISP will go up in 10 seconds. Prepare for attack now! \n";
+	countdown = "2...";
+	p1.write(countdown);
+	p2.write(countdown);
+
+	}, 1000);
+	
+	setTimeout(function () {
+	
+	countdown = "1...";
+	p1.write(countdown);
+	p2.write(countdown);
+
+	}, 2000);
+
+	setTimeout(function () {
+		
+	var welcome = "GO!\r\nISP will go up in 30 seconds. Prepare for attack now! \r\n";
 	p1.write(welcome);
 	p2.write(welcome);
 	p1.acceptinput = true;
@@ -92,24 +180,27 @@ function Game(s1, s2) {
 	p1.prompt();
 	p2.prompt();
 
-	var GameEvents = new EventEmitter();
 
 	setTimeout(function () {
 		isispup = true;
 		GameEvents.emit("ispup");
-		var attack = "\n ISP is up! Attacks will begin to come in! \n";
+		var attack = "\r\nISP is up! Attacks will begin to come in! \r\n";
 		p1.write(attack);
 		p2.write(attack);
-	}, 10 * 1000);
+		p1.prompt();
+		p2.prompt();
+	}, 30 * 1000);
+
+	}, 3000);	
 
 	GameEvents.on("command", function (command, player, opponent) {
-		player.accpetinput = false;
+		player.acceptinput = false;
 		var cb = function () {
 			player.acceptinput = true;;
 			player.prompt();
 		};
-		var args = command;
-		args.splice(0, 1);
+		var args = command.concat();
+		args.shift();
 		if (GameEvents.listeners(command[0]).length == 0 || command[0] == "command") {
 			player.write("Command not found \n");
 			cb();
@@ -118,8 +209,47 @@ function Game(s1, s2) {
 			GameEvents.emit(command[0], args, player, opponent, cb);
 		}
 	});
+	
+	GameEvents.on("exit", function (command, player, opponent) {
+		player.write("You are being disconnected...");
+		opponent.write("Your opponent disconnected from the game");
+		player.end();
+		opponent.end();
+		users.splice(users.indexOf(s1), 1);
+		users.splice(users.indexOf(s2), 1);
+	});
 
+	GameEvents.on("dead", function (dead, opponent) {
+		dead.write("You got hacked. Data comprimised. ");
+		opponent.write("Data aquired. Mission complete! ");
+		dead.end();
+		opponent.end();
+		users.splice(users.indexOf(s1), 1);
+		users.splice(users.indexOf(s2), 1);
+	});
+
+	var attacks = {
+		firewallHealth: function (i) {
+			return 200 * i;
+		},
+		attackHealth: function () {
+			return 10;
+		}
+	};
+	
 	var delays = {
+		botCreation: function (i) {
+			return Math.floor(i * 1000 - 200);
+		},
+		botUp: function (i) {
+			return Math.floor(i * 2000 - 500);
+		},
+		botDown: function (i) {
+			return Math.floor(1);
+		},
+		botAttack: function (i) {
+			return	Math.floor(1 / i * 500);
+		},
 		firewallCreation: function (i) {
 			return Math.floor(i * 200 + 100);
 		},
@@ -131,16 +261,115 @@ function Game(s1, s2) {
 		}
 	};
 
-	GameEvents.on("firewall", function (args, player, opponent, done) {
-		if (args[0] == "create") {
-			player.write("Creating firewall...");
+	GameEvents.on("bot", function (args, player, opponent, done) {
+		if (args[0] == "list") {
+			player.write("Created Bots: \n");
+			player.write("+------------+------+-------+\n");
+			player.write("|" + formatString("ID", 12) + "|" + formatString("Level", 6) + "|" + formatString("Status", 7) + "|\n");
+			player.write("+------------+------+-------+\n");
+			player.bots.forEach(function (bot) {
+				player.write("|" + formatString(bot.hash, 12) + "|" + formatString(bot.level + "", 6) + "|" + formatString((bot.up ? "Up" : "Down"), 7) + "|\n");
+			});
+			player.write("+------------+------+-------+\n");
+			done();
+		}
+		else if (args[0] == "create" && args[1] * 1 > 0 && args[1] * 1 < 6) {
+			args[1] = args[1] * 1;
+			player.write("Creating bot... \n");
 			setTimeout(function () {
-				var firewall = {
-					hash: genId(Math.pow(args[1], 2)),
+				var bot = {
+					hash: genId(7),
 					level: args[1],
 					up: false
 				};
-				player.write("Created firewall " + firewall.hash + " of level " + firewall.hash + " \n");
+				player.write("Created bot " + bot.hash + " of level " + bot.level + " \n");
+				done();
+				player.bots.push(bot);
+			}, delays.botCreation(args[1]));
+		}
+		else if (args[0] == "up" && args[1]) {
+			player.write("Starting bot... \n");
+			var isdone = false;
+			player.bots.forEach(function (bot, index) {
+				if (args[1] == bot.hash) {
+					isdone = true;
+					setTimeout(function () {
+						bot.up = true;
+						player.write("Bot " + bot.hash + " started! \n");
+
+						var attackcheck = function () {
+							var intv = setInterval(function () {
+								if (opponent.attack()) {
+									player.bots.splice(player.bots.indexOf(bot), 2);
+									clearInterval(intv);
+								}
+							}, delays.botAttack(bot.level));
+						};
+
+						if (isispup) {
+							attackcheck();
+						}
+						else {
+							GameEvents.on("ispup", attackcheck);
+						}
+
+						done();
+					}, delays.botUp(bot.level));
+				}
+			});
+			if (!isdone) {
+				player.write("Bot not found. \n");
+				done();
+			}
+		}
+		else if (args[0] == "delete" && args[1]) {
+			player.write("Removing Bot... \n");
+			var isdone = false;
+			player.bots.forEach(function (bot, index) {
+				if (args[1] == bot.hash) {
+					isdone = true;
+					setTimeout(function () {
+						bot.up = false;
+						player.write("Bot " + bot.hash + " removed! \n");
+						player.bots.splice(player.bots.indexOf(bots), 1);
+						done();
+					}, delays.botDown(bot.level));
+				}
+				if (player.bots.length - 1 == index && !isdone) {
+					player.write("Bot not found. \n");
+					done();
+				}
+			});
+		}
+		else {
+			player.write("Error running command \n");
+			done();
+		}
+	});
+ 
+	GameEvents.on("firewall", function (args, player, opponent, done) {
+		if (args[0] == "list") {
+			player.write("Created Firewalls: \n");
+			player.write("+----------------+------+-------+\n");
+			player.write("|" + formatString("ID", 16) + "|" + formatString("Level", 6) + "|" + formatString("Status", 7) + "|\n");
+			player.write("+----------------+------+-------+\n");
+			player.firewalls.forEach(function (firewall) {
+				var id = firewall.hash.length < 13 ? firewall.hash : firewall.hash.substr(1, 12) + "...";
+				player.write("|" + formatString(id, 16) + "|" + formatString(firewall.level + "", 6) + "|" + formatString((firewall.up ? "Up" : "Down"), 7) + "|\n");
+			});
+			player.write("+----------------+------+-------+\n");
+			done();
+		}
+		else if (args[0] == "create" && args[1] * 1 > 0 && args[1] * 1 < 6) {
+			args[1] = args[1] * 1;
+			player.write("Creating firewall... \n");
+			setTimeout(function () {
+				var firewall = {
+					hash: genId(Math.floor(Math.pow(args[1], 1.5) + 1)),
+					level: args[1],
+					up: false
+				};
+				player.write("Created firewall " + firewall.hash + " of level " + firewall.level + " \n");
 				done();
 				player.firewalls.push(firewall);
 				//setTimeout(function () {
@@ -148,31 +377,66 @@ function Game(s1, s2) {
 				//		player.firewalls.splice(player.firewalls.indexOf(firewall), 1);
 				//	}
 				//}, 100);
-			}, firewallCreation(args[1]));
+			}, delays.firewallCreation(args[1]));
 		}
 		else if (args[0] == "up" && args[1]) {
-			player.write("Starting firewall...");
-			setTimeout(function () {
-				player.firewalls.forEach(function (firewall) {
-					if (args[1] == firewall.hash) {
+			player.write("Starting firewall... \n");
+			var isdone = false;
+			player.firewalls.forEach(function (firewall, index) {
+				if (args[1] == firewall.hash) {
+					isdone = true;
+					setTimeout(function () {
 						firewall.up = true;
-						player.write("Firewall " + firewall.hash + " is up! ");
+						player.write("Firewall " + firewall.hash + " started! \n");
 						done();
-					}
-				});
-			}, firewallUp(args[1]));	
+					}, delays.firewallUp(firewall.level));
+				}
+			});
+			if (!isdone) {
+				player.write("Firewall not found. \n");
+				done();
+			}
 		}
-		else if (args[0] == "down" && args[1]) {
-			player.write("Stopping firewall...");
-			setTimeout(function () {
-				player.firewalls.forEach(function (firewall) {
-					if (args[1] == firewall.hash) {
+		else if (args[0] == "delete" && args[1]) {
+			player.write("Removing firewall... \n");
+			var isdone = false;
+			player.firewalls.forEach(function (firewall, index) {
+				if (args[1] == firewall.hash) {
+					isdone = true;
+					setTimeout(function () {
 						firewall.up = false;
-						player.write("Firewall " + firewall.hash + " stopped! ");
+						player.write("Firewall " + firewall.hash + " removed! \n");
+						player.firewalls.splice(player.firewalls.indexOf(firewall), 1);
 						done();
-					}
-				});
-			}, firewallDown(args[1]));
+					}, delays.firewallDown(firewall.level));
+				}
+				if (player.firewalls.length - 1 == index && !isdone) {
+					player.write("Firewall not found. \n");
+					done();
+				}
+			});
+		}
+		else if (false && args[0] == "down" && args[1]) {
+			player.write("Stopping firewall... \n");
+			var isdone = false;
+			player.firewalls.forEach(function (firewall, index) {
+				if (args[1] == firewall.hash) {
+					isdone = true;
+					setTimeout(function () {
+						firewall.up = false;
+						player.write("Firewall " + firewall.hash + " stopped! \n");
+						done();
+					}, delays.firewallDown(firewall.level));
+				}
+				if (player.firewalls.length - 1 == index && !isdone) {
+					player.write("Firewall " + firewall.hash + " not found. \n");
+					done();
+				}
+			});
+		}
+		else {
+			player.write("Error running command \n");
+			done();
 		}
 	}); 
 
