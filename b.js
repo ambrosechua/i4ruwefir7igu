@@ -1,10 +1,10 @@
 var net = require("net");
 var EventEmitter = require('events').EventEmitter;
-var httpserver = require('http').createServer(httphandler).listen(8080);
+var httpserver = require('http').createServer(httphandler).listen(8023);
 var io = require('socket.io').listen(httpserver);
 var fs = require('fs');
 var server = net.createServer();
-server.listen(process.env.PORT || 1234);
+server.listen(1234);
 
 function httphandler(req, res) {
 	if (req.url == "/") {
