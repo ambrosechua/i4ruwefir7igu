@@ -439,7 +439,13 @@ function Game(s1, s2) {
 			done();
 		}
 	}); 
-
+s'da;'
+d;a's;das'd;as
+d;as'
+d;a'
+s;d
+a';d'
+as
 
 
 }
